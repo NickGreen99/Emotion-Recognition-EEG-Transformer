@@ -2,7 +2,7 @@ from pyedflib import highlevel
 import numpy as np
 import os
 import re
-import pandas as pd
+import pickle
 
 # Get number of Subjects (=29)
 n_subjects = 0
@@ -62,6 +62,9 @@ for i in range(0, n_subjects):
     data.append(temp_data)
     data_headers.append(temp_headers)
 
-# Store data structure to csv file
-df = pd.DataFrame(data)
-df.to_csv('data.csv')
+# Store data structure using pickle
+with open("data", "wb") as fp:
+    pickle.dump(data, fp)
+
+with open("data_headers", "wb") as fp2:
+    pickle.dump(data_headers, fp2)
