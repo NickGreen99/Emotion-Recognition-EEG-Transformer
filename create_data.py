@@ -61,3 +61,7 @@ for i in range(0, n_subjects):
 
     data.append(temp_data)
     data_headers.append(temp_headers)
+
+# Store data structure to csv file
+df = pd.DataFrame(data)
+df.to_csv('data.csv')
