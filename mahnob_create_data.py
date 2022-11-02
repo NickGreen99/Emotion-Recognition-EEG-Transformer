@@ -7,13 +7,13 @@ from xml.dom import minidom
 
 # Get number of Subjects (=29)
 n_subjects = 0
-for root, dirs, files in os.walk("./venv/Subjects"):
+for root, dirs, files in os.walk("./venv/MAHNOB_HCI/Subjects"):
     for file in files:
         n_subjects += 1
 
 n_movies = 0
 # Get number of movies (=20)
-for root, dirs, files in os.walk("./venv/MediaFiles"):
+for root, dirs, files in os.walk("./venv/MAHNOB_HCI/MediaFiles"):
     for file in files:
         n_movies += 1
 
@@ -22,7 +22,7 @@ natsort = lambda s: [int(t) if t.isdigit() else t.lower() for t in re.split('(\d
 
 all_sessions_tuple = []
 all_sessions_xml_tuple = []
-for root, dirs, files in os.walk("./venv/Sessions"):
+for root, dirs, files in os.walk("./venv/MAHNOB_HCI/Sessions"):
     for file in files:
         if file.endswith(".bdf"):
             all_sessions_tuple.append((root, file))
