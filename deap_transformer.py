@@ -9,10 +9,21 @@ from keras.layers import Dense, Embedding
 with open("deap_input", "rb") as fp:
     data = pickle.load(fp)
 
+
 # Hyperparameters
-De = 16
-d = 5
-num_electrode_patches = 9
+d = 5  # dimension of a single electrode
+num_electrode_patches = 9  # number of electrode patches/brain regions/transformers
+
+De = 8  # input embedding dimension (electrode level)
+Dr = 16  # embedding dimension (brain - region level)
+Dh = 64  # dimension of weights (MSA)
+k = 16  # num of heads in MSA
+
+
+Le = 2  # no of encoders (electrode level)
+Lr = 2  # no of encoder (brain - region level)
+
+dropout_rate = 0.4  # Dropout rate
 
 # First brain region (Pre-Frontal)
 electrode_patch1 = np.asarray(data[0][0][0]).astype('float32')
