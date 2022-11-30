@@ -24,7 +24,7 @@ k = 16  # num of heads in MSA
 
 Le = 2  # no of encoders (electrode level)
 Lr = 2  # no of encoder (brain - region level)
-L = 8   # no of stacked transformer encoder blocks
+
 dropout_rate = 0.4  # Dropout rate
 
 # First brain region (Pre-Frontal)
@@ -108,7 +108,7 @@ class Transformer_Encoder_Block(layers.Layer):
 
 #  Transformer Encoder Block x 10 Repeat
 class Electrode_Level_Transformer(layers.Layer):
-    def __init__(self, model_dim, num_blocks=L):
+    def __init__(self, model_dim, num_blocks=Le):
         super(Electrode_Level_Transformer, self).__init__()
         self.blocks = [Transformer_Encoder_Block(model_dim) for _ in range(num_blocks)]
         #self.norm = LayerNormalization()
