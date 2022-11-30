@@ -21,9 +21,10 @@ k = 16  # num of heads in MSA
 
 # !!!!!!!! The original ViT paper (and Attention is all you need) suggest Dh to always be equal to De/k !!!!!!!!!!!!!!!
 # And here they don't apply that rule !!!!!!
+
 Le = 2  # no of encoders (electrode level)
 Lr = 2  # no of encoder (brain - region level)
-
+L = 8   # no of stacked transformer encoder blocks
 dropout_rate = 0.4  # Dropout rate
 
 # First brain region (Pre-Frontal)
@@ -41,7 +42,7 @@ class ElectrodePatchEncoder(layers.Layer):
         w_init = tf.random_normal_initializer()
         class_token = w_init(shape=(1, projection_dim), dtype="float32")
         self.class_token = tf.Variable(initial_value=class_token, trainable=True)
-        # Dense layer for linear transformation of electrode patches
+        # Dense layer for linear transformation of electrode patches (Map to constant size De)
         self.projection = Dense(projection_dim)
         # Embedding layer for positional embeddings
         self.position_embedding = Embedding(input_dim=num_patches+1, output_dim=projection_dim)
@@ -65,11 +66,11 @@ class ElectrodePatchEncoder(layers.Layer):
 
 # MLP
 class MLP(layers.Layer):
-    def __init__(self, hidden_states, output_states):
+    def __init__(self, hidden_states, output_states, dropout = dropout_rate):
         super(MLP, self).__init__()
         self.dense1 = Dense(hidden_states, activation=tf.nn.gelu)
         self.dense2 = Dense(output_states, activation=tf.nn.gelu)
-        self.dropout = Dropout(dropout_rate)
+        self.dropout = Dropout(dropout)
 
     def call(self, x, *kwargs):
         hidden = self.dense1(x)
@@ -80,15 +81,14 @@ class MLP(layers.Layer):
 
 
 # Transformer Encoder Block
-class TransformerEncoderBlock(layers.Layer):
-    def __init__(self, mlp_dim, model_dim, num_heads=k, msa_dimensions=Dh):
-        super(TransformerEncoderBlock, self).__init__()
-        self.mlp_dim = mlp_dim
+class Transformer_Encoder_Block(layers.Layer):
+    def __init__(self, model_dim, num_heads=k, msa_dimensions=Dh):
+        super(Transformer_Encoder_Block, self).__init__()
         self.model_dim = model_dim
         self.layernormalization1 = LayerNormalization()
         self.attention = MultiHeadAttention(num_heads=num_heads, key_dim=msa_dimensions, dropout=dropout_rate)
         self.layernormalization2 = LayerNormalization()
-        self.mlp = MLP(hidden_states=mlp_dim, output_states=model_dim)
+        self.mlp = MLP(hidden_states=model_dim*2, output_states=model_dim)
 
     def call(self, x,  *kwargs):
         # Layer normalization 1.
@@ -106,9 +106,26 @@ class TransformerEncoderBlock(layers.Layer):
         return y
 
 
+#  Transformer Encoder Block x 10 Repeat
+class Electrode_Level_Transformer(layers.Layer):
+    def __init__(self, model_dim, num_blocks=L):
+        super(Electrode_Level_Transformer, self).__init__()
+        self.blocks = [Transformer_Encoder_Block(model_dim) for _ in range(num_blocks)]
+        #self.norm = LayerNormalization()
+        #self.dropout = Dropout(0.5)
+
+    def call(self, x, *kwargs):
+        # Create a [batch_size, projection_dim] tensor.
+        for block in self.blocks:
+            x = block(x)
+        #x = self.norm(x)
+        #y = self.dropout(x)
+        return x
+
+
 # Model creation with Keras Functional API
 inputs = keras.Input(shape=(N, d))
 patch_embeddings = ElectrodePatchEncoder(N, De)(inputs)
-outputs = TransformerEncoderBlock(2*De, De)(patch_embeddings)
+outputs = Electrode_Level_Transformer(De)(patch_embeddings)
 model = keras.Model(inputs=inputs, outputs=outputs, name="ElectrodePatchEncoder")
 model.summary()
