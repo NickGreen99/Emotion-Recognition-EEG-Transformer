@@ -3,12 +3,14 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from keras import layers
+from keras import models
 from keras.layers import Dense, Embedding, LayerNormalization, MultiHeadAttention, Dropout, Add
 
 # Unpickling
 with open("deap_input", "rb") as fp:
     data = pickle.load(fp)
 
+regions = len(data[0][0])
 
 # Hyperparameters
 d = 5  # dimension of a single electrode
@@ -26,11 +28,6 @@ Le = 2  # no of encoders (electrode level)
 Lr = 2  # no of encoder (brain - region level)
 
 dropout_rate = 0.4  # Dropout rate
-
-# First brain region (Pre-Frontal)
-electrode_patch1 = np.asarray(data[0][0][0]).astype('float32')
-N = electrode_patch1.shape[0]
-
 
 # Electrode Patch encoder
 class ElectrodePatchEncoder(layers.Layer):
@@ -123,9 +120,14 @@ class Electrode_Level_Transformer(layers.Layer):
         return x
 
 
-# Model creation with Keras Functional API
-inputs = keras.Input(shape=(N, d))
-patch_embeddings = ElectrodePatchEncoder(N, De)(inputs)
-outputs = Electrode_Level_Transformer(De)(patch_embeddings)
-model = keras.Model(inputs=inputs, outputs=outputs, name="ElectrodePatchEncoder")
-model.summary()
+for i in range(0, regions):
+    # Brain region (Pre-Frontal, Frontal, ..)
+    electrode_patch = np.asarray(data[0][0][i]).astype('float32')
+    N = electrode_patch.shape[0]
+
+    # Model creation with Keras Functional API
+    inputs = keras.Input(shape=(N, d))
+    patch_embeddings = ElectrodePatchEncoder(N, De)(inputs)
+    outputs = Electrode_Level_Transformer(De)(patch_embeddings)
+    model = keras.Model(inputs=inputs, outputs=outputs, name="Electrode_Patch_Encoder")
+    model.summary()
