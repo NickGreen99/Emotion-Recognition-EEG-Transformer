@@ -1,27 +1,21 @@
 import tensorflow as tf
 from keras import layers
-from keras.layers import Dense, Embedding, LayerNormalization, MultiHeadAttention, Dropout, Add
+from keras.layers import Dense, Embedding, LayerNormalization, MultiHeadAttention, Dropout, Add, Flatten
+from keras import activations
 
-# Hyperparameters
-d = 5  # dimension of a single electrode
-
-De = 8  # input embedding dimension (electrode level)
-Dr = 16  # embedding dimension (brain - region level)
+# Hyperparameters (remain constant through whole model)
+dropout_rate = 0.4  # Dropout rate
 Dh = 64  # dimension of weights (MSA)
 k = 16  # num of heads in MSA
 
 # !!!!!!!! The original ViT paper (and Attention is all you need) suggest Dh to always be equal to De/k !!!!!!!!!!!!!!!
 # And here they don't apply that rule !!!!!!
 
-Le = 2  # no of encoders (electrode level)
-Lr = 2  # no of encoder (brain - region level)
-dropout_rate = 0.4  # Dropout rate
-
 
 # Electrode Patch encoder
-class ElectrodePatchEncoder(layers.Layer):
+class LinearEmbedding(layers.Layer):
     def __init__(self, num_patches, projection_dim):
-        super(ElectrodePatchEncoder, self).__init__()
+        super(LinearEmbedding, self).__init__()
         self.num_patches = num_patches
         self.projection_dim = projection_dim
         # Create class token
@@ -35,13 +29,13 @@ class ElectrodePatchEncoder(layers.Layer):
 
     def call(self, patch, *kwargs):
         # Reshape the class token to match patches dimensions
-        # From (1,16) to (1,1,16)
+        # From (1,De) to (1,1,De)
         class_token = tf.reshape(self.class_token, (1, 1, self.projection_dim))
         # Calculate patch embeddings
         patches_embed = self.projection(patch)
-        # Shape: (None, 4, 16)
+        # Shape: (None, N, De)
         patches_embed = tf.concat([patches_embed, class_token], 1)
-        # Shape (1 ,5, 16) -- note: in concat all dimensions EXCEPT axis must be equal
+        # Shape (1 ,N+1, De) -- note: in concat all dimensions EXCEPT axis must be equal
         # Calculate position embeddings
         positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
         positions_embed = self.position_embedding(positions)
@@ -67,9 +61,9 @@ class MLP(layers.Layer):
 
 
 # Transformer Encoder Block
-class Transformer_Encoder_Block(layers.Layer):
+class TransformerEncoderBlock(layers.Layer):
     def __init__(self, model_dim, num_heads=k, msa_dimensions=Dh):
-        super(Transformer_Encoder_Block, self).__init__()
+        super(TransformerEncoderBlock, self).__init__()
         self.model_dim = model_dim
         self.layernormalization1 = LayerNormalization()
         self.attention = MultiHeadAttention(num_heads=num_heads, key_dim=msa_dimensions, dropout=dropout_rate)
@@ -92,11 +86,11 @@ class Transformer_Encoder_Block(layers.Layer):
         return y
 
 
-#  Transformer Encoder Block x 10 Repeat
-class Electrode_Level_Transformer(layers.Layer):
-    def __init__(self, model_dim, num_blocks=Le):
-        super(Electrode_Level_Transformer, self).__init__()
-        self.blocks = [Transformer_Encoder_Block(model_dim) for _ in range(num_blocks)]
+#  Transformer Encoder Block x L Repeat
+class TransformerEncoder(layers.Layer):
+    def __init__(self, model_dim, num_blocks):
+        super(TransformerEncoder, self).__init__()
+        self.blocks = [TransformerEncoderBlock(model_dim, num_blocks) for _ in range(num_blocks)]
         # self.norm = LayerNormalization()
         # self.dropout = Dropout(0.5)
 
@@ -107,3 +101,4 @@ class Electrode_Level_Transformer(layers.Layer):
         # x = self.norm(x)
         # y = self.dropout(x)
         return x
+
