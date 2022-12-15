@@ -8,11 +8,16 @@ from keras.layers import Dense, Reshape
 from sklearn.model_selection import LeaveOneOut
 
 # Unpickling
-with open("deap_input", "rb") as fp:
-    data = pickle.load(fp)
+with open("deap_hala_x", "rb") as fp:
+    x = pickle.load(fp)
 
-with open("deap_labels", "rb") as fp:
-    labels = pickle.load(fp)
+with open("deap_hala_y", "rb") as fp:
+    y = pickle.load(fp)
+
+loo = LeaveOneOut()
+
+
+'''
 
 # Hyperparameters
 d = 5  # dimension of a single electrode
@@ -26,13 +31,18 @@ Lr = 2  # no of encoder (brain - region level)
 
 ### Electrode-Level Spatial Learning
 loo = LeaveOneOut()
+for i, (train_index, test_index) in enumerate(loo.split(X)):
+    print(f"Fold {i}:")
+    print(f"  Train: index={train_index}")
+    print(f"  Test:  index={test_index}")
 
-onelabels = tf.one_hot(labels,4).numpy()
+
+#onelabels = tf.one_hot(labels,4).numpy()
 
 # number of electrodes for first subject, first region
-N = data[0][0].shape[0]
+#N = data[0][0].shape[0]
 
-'''
+
 # 1. Brain region (Pre-Frontal)
 # First model creation with Keras Functional API
 patch_inputs1 = keras.Input(shape=(N, d))

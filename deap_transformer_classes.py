@@ -102,3 +102,4 @@ class TransformerEncoder(layers.Layer):
         # y = self.dropout(x)
         return x
 
+
