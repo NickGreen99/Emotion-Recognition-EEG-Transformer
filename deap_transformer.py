@@ -15,6 +15,7 @@ with open("deap_hala_y", "rb") as fp:
     y = pickle.load(fp)
 
 loo = LeaveOneOut()
+for train_index, test_index in loo.split(x):
 
 
 '''
