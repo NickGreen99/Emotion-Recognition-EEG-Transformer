@@ -1,10 +1,11 @@
 import pickle
 from deap_transformer_classes import TransformerEncoder, LinearEmbedding
 import numpy as np
+from keras.utils import plot_model
 from tensorflow import keras
 from keras import Model, activations
 import tensorflow as tf
-from keras.layers import Dense, Reshape
+from keras.layers import Dense, Concatenate
 from sklearn.model_selection import LeaveOneOut
 
 # Unpickling
@@ -14,11 +15,7 @@ with open("deap_hala_x", "rb") as fp:
 with open("deap_hala_y", "rb") as fp:
     y = pickle.load(fp)
 
-loo = LeaveOneOut()
-for train_index, test_index in loo.split(x):
-
-
-'''
+# Shapes: subjects x brain region x sample x electrodes x frequency bands
 
 # Hyperparameters
 d = 5  # dimension of a single electrode
@@ -29,130 +26,134 @@ Dr = 16  # embedding dimension (brain - region level)
 Le = 2  # no of encoders (electrode level)
 Lr = 2  # no of encoder (brain - region level)
 
+# Model
 
 ### Electrode-Level Spatial Learning
-loo = LeaveOneOut()
-for i, (train_index, test_index) in enumerate(loo.split(X)):
-    print(f"Fold {i}:")
-    print(f"  Train: index={train_index}")
-    print(f"  Test:  index={test_index}")
-
-
-#onelabels = tf.one_hot(labels,4).numpy()
-
-# number of electrodes for first subject, first region
-#N = data[0][0].shape[0]
-
 
 # 1. Brain region (Pre-Frontal)
-# First model creation with Keras Functional API
-patch_inputs1 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs1)
-outputs1 = TransformerEncoder(De, Le)(patch_embeddings)
-model = Model(inputs=patch_inputs1, outputs=outputs1)
+N = 4
 
-#outputs1 = tf.reshape(outputs1, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
-#outputs1 = Dense(4)(tf.transpose(outputs1))
-#outputs1 = tf.transpose(outputs1)
-
+electrode_patch_pf = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_pf)
+output_pf = TransformerEncoder(De, Le)(patch_embeddings)
+output_pf = tf.reshape(output_pf, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+output_pf = Dense(4)(tf.transpose(output_pf))
+output_pf = tf.transpose(output_pf)
 
 # 2. Brain region (Frontal)
-electrode_patch = np.asarray(data[0][0][1]).astype('float32')
-N = electrode_patch.shape[0]
+N = 5
 
-# Second model creation with Keras Functional API
-patch_inputs2 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs2)
-outputs2 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs2 = tf.reshape(outputs2, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
-outputs2 = Dense(4)(tf.transpose(outputs2))
-outputs2 = tf.transpose(outputs2)
+electrode_patch_f = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_f)
+output_f = TransformerEncoder(De, Le)(patch_embeddings)
+output_f = tf.reshape(output_f, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+output_f = Dense(4)(tf.transpose(output_f))
+output_f = tf.transpose(output_f)
 
 # 3. Brain region (Left Temporal)
-electrode_patch = np.asarray(data[0][0][2]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Third model creation with Keras Functional API
-patch_inputs3 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs3)
-outputs3 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs3 = tf.reshape(outputs3, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_lt = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_lt)
+output_lt = TransformerEncoder(De, Le)(patch_embeddings)
+output_lt = tf.reshape(output_lt, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # 4. Brain region (Central)
-electrode_patch = np.asarray(data[0][0][3]).astype('float32')
-N = electrode_patch.shape[0]
+N = 5
 
-# Fourth model creation with Keras Functional API
-patch_inputs4 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs4)
-outputs4 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs4 = tf.reshape(outputs4, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
-outputs4 = Dense(4)(tf.transpose(outputs4))
-outputs4 = tf.transpose(outputs4)
+electrode_patch_c = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_c)
+output_c = TransformerEncoder(De, Le)(patch_embeddings)
+output_c = tf.reshape(output_c, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+output_c = Dense(4)(tf.transpose(output_c))
+output_c = tf.transpose(output_c)
 
 # 5. Brain region (Right Temporal)
-electrode_patch = np.asarray(data[0][0][4]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Fifth model creation with Keras Functional API
-patch_inputs5 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs5)
-outputs5 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs5 = tf.reshape(outputs5, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_rt = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_rt)
+output_rt = TransformerEncoder(De, Le)(patch_embeddings)
+output_rt = tf.reshape(output_rt, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # 6. Brain region (Left Parietal)
-electrode_patch = np.asarray(data[0][0][5]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Sixth model creation with Keras Functional API
-patch_inputs6 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs6)
-outputs6 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs6 = tf.reshape(outputs6, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_lp = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_lp)
+output_lp = TransformerEncoder(De, Le)(patch_embeddings)
+output_lp = tf.reshape(output_lp, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # 7. Brain region (Parietal)
-electrode_patch = np.asarray(data[0][0][6]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Seventh model creation with Keras Functional API
-patch_inputs7 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs7)
-outputs7 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs7 = tf.reshape(outputs7, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_p = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_p)
+output_p = TransformerEncoder(De, Le)(patch_embeddings)
+output_p = tf.reshape(output_p, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # 8. Brain region (Right Parietal)
-electrode_patch = np.asarray(data[0][0][7]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Eighth model creation with Keras Functional API
-patch_inputs8 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs8)
-outputs8 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs8 = tf.reshape(outputs8, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_rp = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_rp)
+output_rp = TransformerEncoder(De, Le)(patch_embeddings)
+output_rp = tf.reshape(output_rp, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # 9. Brain region (Occipital)
-electrode_patch = np.asarray(data[0][0][8]).astype('float32')
-N = electrode_patch.shape[0]
+N = 3
 
-# Ninth model creation with Keras Functional API
-patch_inputs9 = keras.Input(shape=(N, d))
-patch_embeddings = LinearEmbedding(N, De)(patch_inputs9)
-outputs9 = TransformerEncoder(De, Le)(patch_embeddings)
-outputs9 = tf.reshape(outputs9, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
+electrode_patch_o = keras.Input(shape=(N, d))
+patch_embeddings = LinearEmbedding(N, De)(electrode_patch_o)
+output_o = TransformerEncoder(De, Le)(patch_embeddings)
+output_o = tf.reshape(output_o, [(N + 1), De])  # reshape output from (1,(N+1),De) to ((N+1),De)
 
 # Latent features obtained by the 9 transformers
-xl = tf.stack([outputs1, outputs2, outputs3, outputs4, outputs5, outputs6, outputs7, outputs8, outputs9])
+xl = tf.stack([output_pf, output_f, output_lt, output_c, output_rt,
+               output_lp, output_p, output_rp, output_o])
 
 ### Brain-Region-Level Spatial Learning
 brain_regions_N = xl.shape[0]
 
-brain_regions_input = keras.Input(shape=(brain_regions_N, 4, De))
-brain_regions_reshaped = Reshape((brain_regions_N, 4*De))(brain_regions_input)
-brain_regions_embeddings = LinearEmbedding(brain_regions_N, Dr)(brain_regions_reshaped)
+# Reshape latent features tensor from (9, 4, 8) to (9, 32)
+xl = tf.reshape(xl, [1, brain_regions_N, 4 * De])
+brain_regions_embeddings = LinearEmbedding(brain_regions_N, Dr)(xl)
 outputs_br = TransformerEncoder(Dr, Lr)(brain_regions_embeddings)
-# Need to change that and insert only class token to the predictor
-prediction = Dense(2, activation=activations.sigmoid)(outputs_br)
+class_token_output = tf.reshape(outputs_br[0][0], [1, Dr])
+# Only class token is input to our emotion prediction NN
+prediction = Dense(2, activation=activations.sigmoid)(class_token_output)
 
-model = Model(inputs=brain_regions_input, outputs=prediction)
-model.summary()
-'''
+# Leave-One-Subject-Out
+loo = LeaveOneOut()
+
+for train_index, test_index in loo.split(x):
+    for i in train_index:
+        train_data = x[i]
+        label_data = y[i]
+
+        model = Model(inputs=[electrode_patch_pf, electrode_patch_f, electrode_patch_lt, electrode_patch_c,
+                              electrode_patch_rt, electrode_patch_lp, electrode_patch_p, electrode_patch_rp,
+                              electrode_patch_o],
+                      outputs=prediction)
+
+        callback = tf.keras.callbacks.EarlyStopping(monitor='loss')
+
+        model.compile(
+            loss=keras.losses.categorical_crossentropy,
+            optimizer=keras.optimizers.Adam(learning_rate=0.0001),
+            metrics=["accuracy"]
+        )
+
+        history = model.fit(
+            x=[train_data[0], train_data[1], train_data[2], train_data[3], train_data[4], train_data[5],
+               train_data[6], train_data[7], train_data[8]],
+            y=label_data,
+            epochs=80, batch_size=512, callbacks=[callback]
+        )
+
+        '''
+        model.summary()
+        plot_model(model, to_file='model.png')
+        '''
+        break
+    break

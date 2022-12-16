@@ -34,7 +34,7 @@ class LinearEmbedding(layers.Layer):
         # Calculate patch embeddings
         patches_embed = self.projection(patch)
         # Shape: (None, N, De)
-        patches_embed = tf.concat([patches_embed, class_token], 1)
+        patches_embed = tf.concat([class_token, patches_embed], 1)
         # Shape (1 ,N+1, De) -- note: in concat all dimensions EXCEPT axis must be equal
         # Calculate position embeddings
         positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
