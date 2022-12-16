@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import pickle
+import tensorflow as tf
 
 # EEG data information
 ch_names = ['Fp1', 'AF3', 'F3', 'F7', 'FC5', 'FC1', 'C3', 'T7', 'CP5', 'CP1', 'P3', 'P7', 'PO3', 'O1',
@@ -173,7 +174,7 @@ for i in range(0, subjects):
     clips = labels_hal.shape[0]
     epochs = labels_hal.shape[1]
     reshaped = np.reshape(labels_hal, (clips * epochs))
-    y_arousal.append(reshaped)
+    y_arousal.append(tf.one_hot(reshaped, 2))
 
 '''
 ones = 0
