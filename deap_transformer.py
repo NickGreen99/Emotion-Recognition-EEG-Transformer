@@ -2,6 +2,7 @@ import pickle
 from deap_transformer_classes import TransformerEncoder, LinearEmbedding
 import numpy as np
 from keras.utils import plot_model
+import matplotlib.pyplot as plt
 from tensorflow import keras
 from keras import Model, activations
 import tensorflow as tf
@@ -133,22 +134,23 @@ model.summary()
 plot_model(model, to_file='model.png', show_shapes=True)
 '''
 
-# Leave-One-Subject-Out
-loo = LeaveOneOut()
 
 average = []
+
+callback = tf.keras.callbacks.EarlyStopping(monitor='loss')
+model.compile(
+    loss=keras.losses.binary_crossentropy,
+    optimizer=keras.optimizers.Adam(learning_rate=0.1),
+    metrics=["accuracy"]
+)
+
+# Leave-One-Subject-Out
+loo = LeaveOneOut()
 
 for train_index, test_index in loo.split(x):
     for i in train_index:
         train_data = x[i]
         label_data = y[i]
-
-        callback = tf.keras.callbacks.EarlyStopping(monitor='loss')
-        model.compile(
-            loss=keras.losses.binary_crossentropy,
-            optimizer=keras.optimizers.Adam(learning_rate=0.1),
-            metrics=["accuracy"]
-        )
 
         history = model.fit(
             x=[train_data[0], train_data[1], train_data[2], train_data[3], train_data[4], train_data[5],
@@ -158,4 +160,20 @@ for train_index, test_index in loo.split(x):
         )
         break
     break
-
+'''
+print(history.history.keys())
+# summarize history for accuracy
+plt.plot(history.history['accuracy'])
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train'], loc='upper left')
+plt.show()
+# summarize history for loss
+plt.plot(history.history['loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train'], loc='upper left')
+plt.show()
+'''
