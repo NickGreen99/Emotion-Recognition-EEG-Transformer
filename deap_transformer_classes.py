@@ -1,7 +1,6 @@
 import tensorflow as tf
 from keras import layers
-from keras.layers import Dense, Embedding, LayerNormalization, MultiHeadAttention, Dropout, Add, Flatten
-from keras import activations
+from keras.layers import Dense, Embedding, LayerNormalization, MultiHeadAttention, Dropout, Add
 
 # Hyperparameters (remain constant through whole model)
 dropout_rate = 0.4  # Dropout rate
@@ -14,10 +13,11 @@ k = 16  # num of heads in MSA
 
 # Electrode Patch encoder
 class LinearEmbedding(layers.Layer):
-    def __init__(self, num_patches, projection_dim):
+    def __init__(self, num_patches, projection_dim, expand=True):
         super(LinearEmbedding, self).__init__()
         self.num_patches = num_patches
         self.projection_dim = projection_dim
+        self.expand = expand
         # Create class token
         w_init = tf.random_normal_initializer()
         class_token = w_init(shape=(1, projection_dim), dtype="float32")
@@ -28,15 +28,28 @@ class LinearEmbedding(layers.Layer):
         self.position_embedding = Embedding(input_dim=num_patches + 1, output_dim=projection_dim)
 
     def call(self, patch, *kwargs):
-        # Reshape the class token to match patches dimensions
-        # From (1,De) to (1,1,De)
-        class_token = tf.reshape(self.class_token, (1, 1, self.projection_dim))
-        # Calculate patch embeddings
-        patches_embed = self.projection(patch)
-        # Shape: (None, N, De)
-        patches_embed = tf.concat([class_token, patches_embed], 1)
-        # Shape (1 ,N+1, De) -- note: in concat all dimensions EXCEPT axis must be equal
-        # Calculate position embeddings
+        if self.expand is True:  # For electrode-level spatial learning
+            # expand dimension 1, so that we can stack the transformer outputs in the brain-region-level
+            patch = tf.expand_dims(patch, axis=1)
+            # get batch_size (must use tf.shape cause batch_size varies since is it not perfectly divisible)
+            batch = tf.shape(patch)[0]
+            # augment class token's first dimension to match the batch_size
+            class_token = tf.tile(self.class_token, multiples=[batch, 1])
+            # reshape the class token to match patches dimensions
+            # from (batch,De) to (batch,1,1,De)
+            class_token = tf.reshape(class_token, (batch, 1, 1, self.projection_dim))
+            # calculate patch embeddings
+            patches_embed = self.projection(patch)
+            # shape: (None, 1, N, De)
+            patches_embed = tf.concat([class_token, patches_embed], 2)
+        else:  # For brain-region-level spatial learning
+            # we do the same as before,but we don't expand dimensions;it's already stacked (concat) on top of each other
+            batch = tf.shape(patch)[0]
+            class_token = tf.tile(self.class_token, multiples=[batch, 1])
+            class_token = tf.reshape(class_token, (batch, 1, self.projection_dim))
+            patches_embed = self.projection(patch)
+            patches_embed = tf.concat([class_token, patches_embed], 1)
+        # calculate position embeddings
         positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
         positions_embed = self.position_embedding(positions)
         # Add positions to patches
@@ -71,17 +84,17 @@ class TransformerEncoderBlock(layers.Layer):
         self.mlp = MLP(hidden_states=model_dim * 2, output_states=model_dim)
 
     def call(self, x, *kwargs):
-        # Layer normalization 1.
+        # layer normalization 1.
         x1 = self.layernormalization1(x)  # encoded_patches
-        # Create a multi-head attention layer.
+        # create a multi-head attention layer.
         attention_output = self.attention(x1, x1)
-        # Skip connection 1.
+        # skip connection 1.
         x2 = Add()([attention_output, x])  # encoded_patches
-        # Layer normalization 2.
+        # layer normalization 2.
         x3 = self.layernormalization2(x2)
-        # MLP.
+        # mLP.
         x3 = self.mlp(x3)
-        # Skip connection 2.
+        # skip connection 2.
         y = Add()([x3, x2])
         return y
 
@@ -95,11 +108,10 @@ class TransformerEncoder(layers.Layer):
         # self.dropout = Dropout(0.5)
 
     def call(self, x, *kwargs):
-        # Create a [batch_size, projection_dim] tensor.
+        # create a [batch_size, projection_dim] tensor.
         for block in self.blocks:
             x = block(x)
         # x = self.norm(x)
-        # y = self.dropout(x)
         return x
 
 
