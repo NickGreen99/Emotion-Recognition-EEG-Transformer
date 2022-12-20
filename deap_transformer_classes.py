@@ -26,7 +26,7 @@ class LinearEmbedding(layers.Layer):
         self.projection = Dense(projection_dim)
         # Embedding layer for positional embeddings
         self.position_embedding = Embedding(input_dim=num_patches + 1, output_dim=projection_dim)
-
+        self.dropout = Dropout(0.1)
     def call(self, patch, *kwargs):
         if self.expand is True:  # For electrode-level spatial learning
             # expand dimension 1, so that we can stack the transformer outputs in the brain-region-level
@@ -42,6 +42,11 @@ class LinearEmbedding(layers.Layer):
             patches_embed = self.projection(patch)
             # shape: (None, 1, N, De)
             patches_embed = tf.concat([class_token, patches_embed], 2)
+            # calculate position embeddings
+            positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
+            positions_embed = self.position_embedding(positions)
+            # Add positions to patches
+            encoded = patches_embed + positions_embed
         else:  # For brain-region-level spatial learning
             # we do the same as before,but we don't expand dimensions;it's already stacked (concat) on top of each other
             batch = tf.shape(patch)[0]
@@ -49,11 +54,12 @@ class LinearEmbedding(layers.Layer):
             class_token = tf.reshape(class_token, (batch, 1, self.projection_dim))
             patches_embed = self.projection(patch)
             patches_embed = tf.concat([class_token, patches_embed], 1)
-        # calculate position embeddings
-        positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
-        positions_embed = self.position_embedding(positions)
-        # Add positions to patches
-        encoded = patches_embed + positions_embed
+            # calculate position embeddings
+            positions = tf.range(start=0, limit=self.num_patches + 1, delta=1)
+            positions_embed = self.position_embedding(positions)
+            # Add positions to patches
+            encoded = patches_embed + positions_embed
+            encoded = self.dropout(encoded)
         return encoded
 
 
@@ -104,14 +110,11 @@ class TransformerEncoder(layers.Layer):
     def __init__(self, model_dim, num_blocks):
         super(TransformerEncoder, self).__init__()
         self.blocks = [TransformerEncoderBlock(model_dim, num_blocks) for _ in range(num_blocks)]
-        # self.norm = LayerNormalization()
-        # self.dropout = Dropout(0.5)
 
     def call(self, x, *kwargs):
         # create a [batch_size, projection_dim] tensor.
         for block in self.blocks:
             x = block(x)
-        # x = self.norm(x)
         return x
 
 

@@ -134,32 +134,43 @@ model.summary()
 plot_model(model, to_file='model.png', show_shapes=True)
 '''
 
-
-average = []
-
 callback = tf.keras.callbacks.EarlyStopping(monitor='loss')
+
+
 model.compile(
     loss=keras.losses.binary_crossentropy,
-    optimizer=keras.optimizers.Adam(learning_rate=0.1),
+    optimizer=keras.optimizers.Adam(learning_rate=0.05),
     metrics=["accuracy"]
 )
 
 # Leave-One-Subject-Out
 loo = LeaveOneOut()
-
+average_acc = []
+big_count = 0
 for train_index, test_index in loo.split(x):
+    big_count += 1
+    count = 0
+    print('-----------------------------------------')
+    print('big count = ' + str(big_count))
+    tf.keras.backend.clear_session()
     for i in train_index:
         train_data = x[i]
         label_data = y[i]
+
+        count += 1
+        print('-----------------------------------------')
+        print('count = ' + str(count))
 
         history = model.fit(
             x=[train_data[0], train_data[1], train_data[2], train_data[3], train_data[4], train_data[5],
                train_data[6], train_data[7], train_data[8]],
             y=label_data,
-            epochs=80, batch_size=512#, callbacks=[callback]
+            epochs=80, batch_size=512, callbacks=[callback]
         )
-        break
-    break
+    cross_val = model.evaluate(x[test_index[0]], y[test_index[0]])
+    average_acc.append(cross_val[1])
+average_acc = np.array(average_acc)
+print(np.mean(average_acc))
 '''
 print(history.history.keys())
 # summarize history for accuracy
