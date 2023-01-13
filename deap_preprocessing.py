@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import pickle
-import tensorflow as tf
 
 # EEG data information
 ch_names = ['Fp1', 'AF3', 'F3', 'F7', 'FC5', 'FC1', 'C3', 'T7', 'CP5', 'CP1', 'P3', 'P7', 'PO3', 'O1',
@@ -39,21 +38,21 @@ for subject in subjects_file_path:
     path = Path(subject)
     content = path.read_bytes()
     data = pickle.loads(content, encoding='ISO-8859-1')
-    signals.append(data['data'])
+    signals.append(data['data'])  # (subjects, trials, electrodes, samples)
     labels.append(data['labels'])
 
 # Create data matrix (subjects, trials, epochs, channels, samples)
-data_length = 60 * sampling_freq
+data_length = 60 * sampling_freq  # 60 seconds each trial
 number_of_segments = (data_length - (overlap_size * sampling_freq)) / (overlap_size * sampling_freq)
 # We need to erase pre_trial baseline from our data
 pre_trial = sampling_freq * 3
 
-# subjects x trials x epochs x channels x samples (32, 40, 20, 32, 768)
+# subjects x trials x epochs x channels x samples (32, 40, 19, 32, 768)
 eeg_data = np.zeros((subjects, trials, int(number_of_segments), len(ch_names), window_size * sampling_freq))
 
 for i in range(0, subjects):
     for j in range(0, trials):
-        eeg_data[i, j] = read_data(signals[i][j][0:32, pre_trial:8064])
+        eeg_data[i, j] = read_data(signals[i][j][0:32, pre_trial:pre_trial+data_length])
 
 # Get correct number of samples, separate HIGH AROUSAL from LOW AROUSAL and HIGH VALENCE from LOW VALENCE
 
@@ -103,6 +102,9 @@ for i in range(0, subjects):
     x_hala.append(x_hala_trials)
     y_hala.append(y_hala_trials)
 
+# x_hala = (32,39,19,32,768) gia to 1o subject
+# x_hala = (32,34,19,32,768) gia to 2o subject
+
 
 # Feature Extraction and data preparations for inputs to HSLT model
 def fe(x):
@@ -116,19 +118,20 @@ def fe(x):
 
     # noinspection PyUnresolvedReferences
     (f, psd) = scipy.signal.welch(eeg, sampling_freq, nperseg=sampling_freq, window='hamming')
-
+    # psd shape for one segment and one channel 1*65
+    # frequency shape is 1*65, makes sense cause sampling freq is 128 so we can analyse from 0-64hz
     X = np.zeros((clips * epochs, channels, freq_bands))
 
     # delta band (4-7Hz)
-    X[0:clips * epochs, 0:channels, 0] = np.mean(psd[0:clips * epochs, 0:channels, 4:8], axis=2)
+    X[0:clips * epochs, 0:channels, 0] = np.mean(10 * np.log10(psd[0:clips * epochs, 0:channels, 4:8]), axis=2)
     # slow alpha band (8-10Hz)
-    X[0:clips * epochs, 0:channels, 1] = np.mean(psd[0:clips * epochs, 0:channels, 8:11], axis=2)
+    X[0:clips * epochs, 0:channels, 1] = np.mean(10 * np.log10(psd[0:clips * epochs, 0:channels, 8:11]), axis=2)
     # alpha band (8-12Hz)
-    X[0:clips * epochs, 0:channels, 2] = np.mean(psd[0:clips * epochs, 0:channels, 8:13], axis=2)
+    X[0:clips * epochs, 0:channels, 2] = np.mean(10 * np.log10(psd[0:clips * epochs, 0:channels, 8:13]), axis=2)
     # beta band (13-30Hz)
-    X[0:clips * epochs, 0:channels, 3] = np.mean(psd[0:clips * epochs, 0:channels, 13:31], axis=2)
+    X[0:clips * epochs, 0:channels, 3] = np.mean(10 * np.log10(psd[0:clips * epochs, 0:channels, 13:31]), axis=2)
     # gamma band (30-47Hz)
-    X[0:clips * epochs, 0:channels, 4] = np.mean(psd[0:clips * epochs, 0:channels, 30:48], axis=2)
+    X[0:clips * epochs, 0:channels, 4] = np.mean(10 * np.log10(psd[0:clips * epochs, 0:channels, 30:48]), axis=2)
 
     x_pf = np.zeros((clips * epochs, 4, 5))
     x_f = np.zeros((clips * epochs, 5, 5))
@@ -164,17 +167,17 @@ def fe(x):
     return [x_pf, x_f, x_lt, x_c, x_rt, x_lp, x_p, x_rp, x_o]
 
 
-x_arousal = []
+x_arousal = []  # gia to 1o subject einai (741,4,5), gia to 2o subject einai (646,4,5) [to 4 einai gia to prefrontal]
 for i in range(0, subjects):
     x_arousal.append(fe(x_hala[i]))
 
-y_arousal = []
+y_arousal = []  # gia to 1o subject einai (741,2)
 for i in range(0, subjects):
     labels_hal = np.array(y_hala[i])
     clips = labels_hal.shape[0]
     epochs = labels_hal.shape[1]
     reshaped = np.reshape(labels_hal, (clips * epochs))
-    y_arousal.append(tf.one_hot(reshaped, 2))
+    y_arousal.append(reshaped)
 
 '''
 ones = 0

@@ -120,12 +120,12 @@ def HierarchicalTransformer():
     # Only class token is input to our emotion prediction NN
     prediction = Dense(2, activation=activations.sigmoid)(class_token_output)
 
-    model = Model(inputs=[electrode_patch_pf, electrode_patch_f, electrode_patch_lt, electrode_patch_c,
-                          electrode_patch_rt, electrode_patch_lp, electrode_patch_p, electrode_patch_rp,
-                          electrode_patch_o],
-                  outputs=prediction)
+    hslt = Model(inputs=[electrode_patch_pf, electrode_patch_f, electrode_patch_lt, electrode_patch_c,
+                         electrode_patch_rt, electrode_patch_lp, electrode_patch_p, electrode_patch_rp,
+                         electrode_patch_o],
+                 outputs=prediction)
 
-    return model
+    return hslt
 
 
 model = HierarchicalTransformer()
@@ -134,15 +134,94 @@ model.summary()
 plot_model(model, to_file='model.png', show_shapes=True)
 '''
 
-callback = tf.keras.callbacks.EarlyStopping(monitor='loss')
-
+early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=3, verbose=1)
+lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.1, decay_steps=1000)
+adam = keras.optimizers.Adam(learning_rate=lr_cosine_decay)
 
 model.compile(
-    loss=keras.losses.binary_crossentropy,
-    optimizer=keras.optimizers.Adam(learning_rate=0.05),
+    loss=keras.losses.categorical_crossentropy,
+    optimizer=adam, #keras.optimizers.Adam(learning_rate=0.01),
     metrics=["accuracy"]
 )
 
+# Leave-One-Subject-Out
+loo = LeaveOneOut()
+average_acc = []
+count = 0
+for train_index, test_index in loo.split(x):
+    count += 1
+    print('-----------------------------------------')
+    print('count = ' + str(count))
+    tf.keras.backend.clear_session()
+
+    # Train - Validation Split
+    train = []
+    train_labels = []
+
+    for i in train_index:
+        train.append(x[i])
+        train_labels.append(np.reshape(y[i], (-1, 1)))
+    test = x[test_index[0]]
+    test_labels = y[test_index[0]]
+
+    prefrontal_x = [br[0] for br in train]
+    prefrontal_x = np.vstack(prefrontal_x)
+    prefrontal_test = test[0]
+
+    frontal_x = [br[1] for br in train]
+    frontal_x = np.vstack(frontal_x)
+    frontal_test = test[1]
+
+    ltemporal_x = [br[2] for br in train]
+    ltemporal_x = np.vstack(ltemporal_x)
+    ltemporal_test = test[2]
+
+    central_x = [br[3] for br in train]
+    central_x = np.vstack(central_x)
+    central_test = test[3]
+
+    rtemporal_x = [br[4] for br in train]
+    rtemporal_x = np.vstack(rtemporal_x)
+    rtemporal_test = test[4]
+
+    lparietal_x = [br[5] for br in train]
+    lparietal_x = np.vstack(lparietal_x)
+    lparietal_test = test[5]
+
+    parietal_x = [br[6] for br in train]
+    parietal_x = np.vstack(parietal_x)
+    parietal_test = test[6]
+
+    rparietal_x = [br[7] for br in train]
+    rparietal_x = np.vstack(rparietal_x)
+    rparietal_test = test[7]
+
+    occipital_x = [br[8] for br in train]
+    occipital_x = np.vstack(occipital_x)
+    occipital_test = test[8]
+
+    train_labels = np.vstack(train_labels)
+
+    # One-Hot-Encoding
+    train_labels = tf.one_hot(train_labels, 2)
+    train_labels = np.reshape(train_labels, (-1, 2))
+
+    test_labels = tf.one_hot(test_labels, 2)
+
+    history = model.fit(
+        x=[prefrontal_x, frontal_x, ltemporal_x, central_x, rtemporal_x, lparietal_x,
+           parietal_x, rparietal_x, occipital_x],
+        y=train_labels,
+        validation_data=([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test, lparietal_test,
+                          parietal_test, rparietal_test, occipital_test], test_labels),
+        epochs=80, batch_size=512, callbacks=[early_stopping]
+    )
+    average_acc.append(history.history['val_accuracy'][-1])
+
+average_acc = np.array(average_acc)
+print(np.mean(average_acc))
+print(average_acc)
+'''
 # Leave-One-Subject-Out
 loo = LeaveOneOut()
 average_acc = []
@@ -153,6 +232,9 @@ for train_index, test_index in loo.split(x):
     print('-----------------------------------------')
     print('big count = ' + str(big_count))
     tf.keras.backend.clear_session()
+
+    for i in train_index:
+        prefrontal = np.vstack(x[i])
     for i in train_index:
         train_data = x[i]
         label_data = y[i]
@@ -160,31 +242,23 @@ for train_index, test_index in loo.split(x):
         count += 1
         print('-----------------------------------------')
         print('count = ' + str(count))
-
+        print('big count = ' + str(big_count))
         history = model.fit(
             x=[train_data[0], train_data[1], train_data[2], train_data[3], train_data[4], train_data[5],
                train_data[6], train_data[7], train_data[8]],
             y=label_data,
-            epochs=80, batch_size=512, callbacks=[callback]
+            validation_data=(x[test_index[0]], y[test_index[0]]),
+            epochs=80, batch_size=512 #callbacks=[early_stopping]
         )
-    cross_val = model.evaluate(x[test_index[0]], y[test_index[0]])
-    average_acc.append(cross_val[1])
+    average_acc.append(history.history['val_accuracy'][-1])
+    break
 average_acc = np.array(average_acc)
 print(np.mean(average_acc))
+print(average_acc)
 '''
-print(history.history.keys())
-# summarize history for accuracy
-plt.plot(history.history['accuracy'])
-plt.title('model accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train'], loc='upper left')
+
+# plot losses
+plt.plot(history.history['loss'], label='train')
+plt.plot(history.history['val_loss'], label='test')
+plt.legend()
 plt.show()
-# summarize history for loss
-plt.plot(history.history['loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train'], loc='upper left')
-plt.show()
-'''
