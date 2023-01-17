@@ -91,12 +91,12 @@ for i in range(0, subjects):
     x_hala_trials = []
     y_hala_trials = []
     for j in range(0, trials):
-        if hala_list[i][j]:
+        if hala_list[i][j]: ##
             x_hala_epochs = []
             y_hala_epochs = []
             for k in range(0, int(number_of_segments)):
                 x_hala_epochs.append(eeg_data[i, j, k])
-                y_hala_epochs.append(hala_list[i][j][k])
+                y_hala_epochs.append(hala_list[i][j][k]) ##
             x_hala_trials.append(x_hala_epochs)
             y_hala_trials.append(y_hala_epochs)
     x_hala.append(x_hala_trials)

@@ -8,6 +8,7 @@ from keras import Model, activations
 import tensorflow as tf
 from keras.layers import Dense, Reshape, Concatenate
 from sklearn.model_selection import LeaveOneOut
+from keras import backend as K
 
 # Unpickling
 with open("deap_hala_x", "rb") as fp:
@@ -135,18 +136,42 @@ plot_model(model, to_file='model.png', show_shapes=True)
 '''
 
 early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=3, verbose=1)
-lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.1, decay_steps=1000)
+lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.01, decay_steps=1000)
 adam = keras.optimizers.Adam(learning_rate=lr_cosine_decay)
+
+
+def recall_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+
+def precision_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def f1_m(y_true, y_pred):
+    precision = precision_m(y_true, y_pred)
+    recall = recall_m(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+
 
 model.compile(
     loss=keras.losses.categorical_crossentropy,
-    optimizer=adam, #keras.optimizers.Adam(learning_rate=0.01),
-    metrics=["accuracy"]
+    optimizer=keras.optimizers.Adam(learning_rate=0.01),
+    metrics=["accuracy", f1_m]
 )
 
 # Leave-One-Subject-Out
 loo = LeaveOneOut()
 average_acc = []
+average_results_acc = []
+average_f1 = []
+average_results_f1 = []
 count = 0
 for train_index, test_index in loo.split(x):
     count += 1
@@ -161,6 +186,7 @@ for train_index, test_index in loo.split(x):
     for i in train_index:
         train.append(x[i])
         train_labels.append(np.reshape(y[i], (-1, 1)))
+    print(test_index[0])
     test = x[test_index[0]]
     test_labels = y[test_index[0]]
 
@@ -216,49 +242,24 @@ for train_index, test_index in loo.split(x):
                           parietal_test, rparietal_test, occipital_test], test_labels),
         epochs=80, batch_size=512, callbacks=[early_stopping]
     )
+    results = model.evaluate([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test,
+                              lparietal_test, parietal_test, rparietal_test, occipital_test], test_labels)
     average_acc.append(history.history['val_accuracy'][-1])
-
+    average_f1.append(history.history['val_f1_m'][-1])
+    average_results_acc.append(results[1])
+    average_results_f1.append(results[2])
 average_acc = np.array(average_acc)
-print(np.mean(average_acc))
-print(average_acc)
+average_f1 = np.array(average_f1)
+average_results_acc = np.array(average_results_acc)
+average_results_f1 = np.array(average_results_f1)
+print('Acc: ' + str(np.mean(average_acc)))
+print('F1: ' + str(np.mean(average_f1)))
+print('Results Acc: ' + str(np.mean(average_results_acc)))
+print('Results F1: ' + str(np.mean(average_results_f1)))
 '''
-# Leave-One-Subject-Out
-loo = LeaveOneOut()
-average_acc = []
-big_count = 0
-for train_index, test_index in loo.split(x):
-    big_count += 1
-    count = 0
-    print('-----------------------------------------')
-    print('big count = ' + str(big_count))
-    tf.keras.backend.clear_session()
-
-    for i in train_index:
-        prefrontal = np.vstack(x[i])
-    for i in train_index:
-        train_data = x[i]
-        label_data = y[i]
-
-        count += 1
-        print('-----------------------------------------')
-        print('count = ' + str(count))
-        print('big count = ' + str(big_count))
-        history = model.fit(
-            x=[train_data[0], train_data[1], train_data[2], train_data[3], train_data[4], train_data[5],
-               train_data[6], train_data[7], train_data[8]],
-            y=label_data,
-            validation_data=(x[test_index[0]], y[test_index[0]]),
-            epochs=80, batch_size=512 #callbacks=[early_stopping]
-        )
-    average_acc.append(history.history['val_accuracy'][-1])
-    break
-average_acc = np.array(average_acc)
-print(np.mean(average_acc))
-print(average_acc)
-'''
-
 # plot losses
 plt.plot(history.history['loss'], label='train')
 plt.plot(history.history['val_loss'], label='test')
 plt.legend()
 plt.show()
+'''
