@@ -2,20 +2,30 @@ import pickle
 from deap_transformer_classes import TransformerEncoder, LinearEmbedding
 import numpy as np
 from keras.utils import plot_model
+import tensorflow_addons as tfa
 import matplotlib.pyplot as plt
+import math
 from tensorflow import keras
 from keras import Model, activations
 import tensorflow as tf
-from keras.layers import Dense, Reshape, Concatenate
+from keras.layers import Dense, Reshape, Concatenate, GlobalAveragePooling1D
 from sklearn.model_selection import LeaveOneOut
-from keras import backend as K
+from keras.callbacks import LearningRateScheduler
+from keras.optimizers import Adam
+from sklearn.metrics import confusion_matrix, multilabel_confusion_matrix
 
 # Unpickling
-with open("deap_hala_x", "rb") as fp:
+with open("deap_hvlv_x", "rb") as fp:
     x = pickle.load(fp)
 
-with open("deap_hala_y", "rb") as fp:
+with open("deap_hvlv_y", "rb") as fp:
     y = pickle.load(fp)
+
+# Check whether we do binary or 4-class classification
+classes = 2
+if max(y[0] > 1):
+    classes = 4
+print(classes)
 
 # Shapes: subjects x brain region x sample x electrodes x frequency bands
 
@@ -117,9 +127,10 @@ def HierarchicalTransformer():
     xl = Reshape((brain_regions_N, 4 * De))(xl)
     brain_regions_embeddings = LinearEmbedding(brain_regions_N, Dr, False)(xl)
     outputs_br = TransformerEncoder(Dr, Lr)(brain_regions_embeddings)
-    class_token_output = outputs_br[:, 0, :]
+    #class_token_output = outputs_br[:, 0, :]
+    class_token_output = GlobalAveragePooling1D()(outputs_br)
     # Only class token is input to our emotion prediction NN
-    prediction = Dense(2, activation=activations.sigmoid)(class_token_output)
+    prediction = Dense(classes, activation=activations.sigmoid)(class_token_output)
 
     hslt = Model(inputs=[electrode_patch_pf, electrode_patch_f, electrode_patch_lt, electrode_patch_c,
                          electrode_patch_rt, electrode_patch_lp, electrode_patch_p, electrode_patch_rp,
@@ -130,48 +141,37 @@ def HierarchicalTransformer():
 
 
 model = HierarchicalTransformer()
-'''
+
 model.summary()
+'''
 plot_model(model, to_file='model.png', show_shapes=True)
 '''
-
-early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=3, verbose=1)
-lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.01, decay_steps=1000)
-adam = keras.optimizers.Adam(learning_rate=lr_cosine_decay)
-
-
-def recall_m(y_true, y_pred):
-    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-    recall = true_positives / (possible_positives + K.epsilon())
-    return recall
+'''
+# Training hyperparameters
+epochs = 80
+batch_size = 512
+early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min',  verbose=1,
+                                               restore_best_weights=True)
 
 
-def precision_m(y_true, y_pred):
-    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-    precision = true_positives / (predicted_positives + K.epsilon())
-    return precision
+# Cosine Learning Decay function
+def cosine_decay(epoch, lr):
+    lrate = lr * (math.cos(math.pi * epoch / epochs) + 1) / 2
+    return lrate
 
 
-def f1_m(y_true, y_pred):
-    precision = precision_m(y_true, y_pred)
-    recall = recall_m(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+# Cosine Learning Annealing function
+def cosine_annealing(epoch, lr):
+    final_lrate = 0.0001
+    cos_inner = (math.pi * (epoch % epochs)) / epochs
+    return final_lrate + (lr - final_lrate) * (1 + math.cos(cos_inner)) / 2
 
-
-model.compile(
-    loss=keras.losses.categorical_crossentropy,
-    optimizer=keras.optimizers.Adam(learning_rate=0.01),
-    metrics=["accuracy", f1_m]
-)
 
 # Leave-One-Subject-Out
 loo = LeaveOneOut()
-average_acc = []
 average_results_acc = []
-average_f1 = []
 average_results_f1 = []
+average_results_cohen = []
 count = 0
 for train_index, test_index in loo.split(x):
     count += 1
@@ -186,7 +186,6 @@ for train_index, test_index in loo.split(x):
     for i in train_index:
         train.append(x[i])
         train_labels.append(np.reshape(y[i], (-1, 1)))
-    print(test_index[0])
     test = x[test_index[0]]
     test_labels = y[test_index[0]]
 
@@ -229,10 +228,18 @@ for train_index, test_index in loo.split(x):
     train_labels = np.vstack(train_labels)
 
     # One-Hot-Encoding
-    train_labels = tf.one_hot(train_labels, 2)
-    train_labels = np.reshape(train_labels, (-1, 2))
+    train_labels = tf.one_hot(train_labels, classes)
+    train_labels = np.reshape(train_labels, (-1, classes))
+    test_labels = tf.one_hot(test_labels, classes)
 
-    test_labels = tf.one_hot(test_labels, 2)
+    # Cosine Learning Decay
+    #lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.01, decay_steps=512 * 20)
+    lrate = LearningRateScheduler(cosine_decay)
+
+    model.compile(
+        loss=keras.losses.CategoricalCrossentropy(),
+        optimizer=Adam(learning_rate=0.001)
+    )
 
     history = model.fit(
         x=[prefrontal_x, frontal_x, ltemporal_x, central_x, rtemporal_x, lparietal_x,
@@ -240,22 +247,47 @@ for train_index, test_index in loo.split(x):
         y=train_labels,
         validation_data=([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test, lparietal_test,
                           parietal_test, rparietal_test, occipital_test], test_labels),
-        epochs=80, batch_size=512, callbacks=[early_stopping]
+        epochs=epochs, batch_size=batch_size, callbacks=[early_stopping, lrate]
     )
-    results = model.evaluate([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test,
-                              lparietal_test, parietal_test, rparietal_test, occipital_test], test_labels)
-    average_acc.append(history.history['val_accuracy'][-1])
-    average_f1.append(history.history['val_f1_m'][-1])
-    average_results_acc.append(results[1])
-    average_results_f1.append(results[2])
-average_acc = np.array(average_acc)
-average_f1 = np.array(average_f1)
+    prediction = model.predict([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test,
+                                lparietal_test, parietal_test, rparietal_test, occipital_test])
+    prediction_bool = np.argmax(prediction, axis=1)
+    true_bool = np.argmax(test_labels, axis=1)
+
+    # Confusion Matrix
+    cm = confusion_matrix(true_bool, prediction_bool)
+
+    # Accuracy
+    accuracy = (cm[0][0] + cm[1][1]) / (cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1])
+
+    # F1
+    recall = (cm[1][1]) / (cm[1][1]+cm[0][1])
+    precision = (cm[1][1]) / (cm[1][1]+cm[1][0])
+    f1 = 2 * (precision * recall) / (precision + recall)
+
+    # Cohen
+    agree = accuracy
+    total = cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1]
+    probPred_1_0 = (cm[0][0] + cm[1][0]) / total
+    probTrue_1_0 = (cm[0][0] + cm[0][1]) / total
+    probPred_0_1 = (cm[0][1] + cm[1][1]) / total
+    probTrue_0_1 = (cm[1][0] + cm[1][1]) / total
+    chance_agree = (probTrue_1_0 * probPred_1_0) + (probTrue_0_1 * probPred_0_1)
+    cohen = (agree - chance_agree) / (1-chance_agree)
+
+    average_results_acc.append(accuracy)
+    average_results_f1.append(f1)
+    average_results_cohen.append(cohen)
+    print(cohen)
+    #if test_index[0] == 3:
+    #    break
 average_results_acc = np.array(average_results_acc)
 average_results_f1 = np.array(average_results_f1)
-print('Acc: ' + str(np.mean(average_acc)))
-print('F1: ' + str(np.mean(average_f1)))
-print('Results Acc: ' + str(np.mean(average_results_acc)))
-print('Results F1: ' + str(np.mean(average_results_f1)))
+average_results_cohen = np.array(average_results_cohen)
+print('Results Acc: ' + str(np.mean(average_results_acc)) + '| Std: ' + str(np.std(average_results_acc)))
+print('Results F1: ' + str(np.mean(average_results_f1)) + '| Std: ' + str(np.std(average_results_f1)))
+print('Results Kappa: ' + str(np.mean(average_results_cohen)) + '| Std: ' + str(np.std(average_results_cohen)))
+'''
 '''
 # plot losses
 plt.plot(history.history['loss'], label='train')

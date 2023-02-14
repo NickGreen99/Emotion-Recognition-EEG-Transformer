@@ -62,15 +62,30 @@ for i in range(0, subjects):
 # LV --> 1-4 --> 0
 # HV --> 6-9 --> 1
 
+# Binary
 hala_list = []
 hvlv_list = []
+
+# 4-class
+av_list = []
+
 for i in range(0, subjects):
+    # Binary
     hala_trials = []
     hvlv_trials = []
+
+    # 4-class
+    av_trials = []
     for j in range(0, trials):
+        # Binary
         hala_segments = []
         hvlv_segments = []
+
+        # 4-class
+        av_segments = []
+
         for k in range(0, int(number_of_segments)):
+            # Binary
             if (labels[i][j][1] <= 4) and (labels[i][j][1] >= 1):
                 hala_segments.append(0)  # low arousal
             elif (labels[i][j][1] >= 6) and (labels[i][j][1] <= 9):
@@ -80,27 +95,51 @@ for i in range(0, subjects):
                 hvlv_segments.append(0)  # low valence
             elif (labels[i][j][0] >= 6) and (labels[i][j][0] <= 9):
                 hvlv_segments.append(1)  # high valence
+
+            # 4-class
+            if (labels[i][j][1]) <= 4 and (labels[i][j][1] >= 1) and (labels[i][j][0] <= 4) and (labels[i][j][0] >= 1):
+                av_segments.append(0)  # low arousal low valence
+            elif (labels[i][j][1]) <= 4 and (labels[i][j][1] >= 1) and (labels[i][j][0] <= 9) and (labels[i][j][0] >= 6):
+                av_segments.append(1)  # low arousal high valence
+            elif (labels[i][j][1]) <= 9 and (labels[i][j][1] >= 6) and (labels[i][j][0] <= 4) and (labels[i][j][0] >= 1):
+                av_segments.append(2)  # high arousal low valence
+            elif (labels[i][j][1]) <= 9 and (labels[i][j][1] >= 6) and (labels[i][j][0] <= 9) and (labels[i][j][0] >= 6):
+                av_segments.append(3)  # high arousal high valence
         hala_trials.append(hala_segments)
         hvlv_trials.append(hvlv_segments)
+        av_trials.append(av_segments)
     hala_list.append(hala_trials)
     hvlv_list.append(hvlv_trials)
+    av_list.append(av_trials)
 
-x_hala = []
-y_hala = []
-for i in range(0, subjects):
-    x_hala_trials = []
-    y_hala_trials = []
-    for j in range(0, trials):
-        if hala_list[i][j]: ##
-            x_hala_epochs = []
-            y_hala_epochs = []
-            for k in range(0, int(number_of_segments)):
-                x_hala_epochs.append(eeg_data[i, j, k])
-                y_hala_epochs.append(hala_list[i][j][k]) ##
-            x_hala_trials.append(x_hala_epochs)
-            y_hala_trials.append(y_hala_epochs)
-    x_hala.append(x_hala_trials)
-    y_hala.append(y_hala_trials)
+
+# Make sure that labels are within the specified limits
+
+def assign_values_to_labels(label_list):
+    x = []
+    y = []
+    for i in range(0, subjects):
+        x_trials = []
+        y_trials = []
+        for j in range(0, trials):
+            # Checks to see if a clip has not got a valid movie rating (1 < rating < 4 [low]) or (6 < rating < 9 [high])
+            if label_list[i][j]:
+                x_epochs = []
+                y_epochs = []
+                for k in range(0, int(number_of_segments)):
+                    x_epochs.append(eeg_data[i, j, k])
+                    y_epochs.append(label_list[i][j][k])
+                x_trials.append(x_epochs)
+                y_trials.append(y_epochs)
+        x.append(x_trials)
+        y.append(y_trials)
+
+    return x, y
+
+
+x_hala, y_hala = assign_values_to_labels(hala_list)
+x_hvlv, y_hvlv = assign_values_to_labels(hvlv_list)
+x_av, y_av = assign_values_to_labels(av_list)
 
 # x_hala = (32,39,19,32,768) gia to 1o subject
 # x_hala = (32,34,19,32,768) gia to 2o subject
@@ -167,30 +206,68 @@ def fe(x):
     return [x_pf, x_f, x_lt, x_c, x_rt, x_lp, x_p, x_rp, x_o]
 
 
+# Subjects x Brain Region x Data x Electrodes x Frequency band
+
+
 x_arousal = []  # gia to 1o subject einai (741,4,5), gia to 2o subject einai (646,4,5) [to 4 einai gia to prefrontal]
+x_valence = []
+x_arousal_valence = []
 for i in range(0, subjects):
     x_arousal.append(fe(x_hala[i]))
+    x_valence.append(fe(x_hvlv[i]))
+    x_arousal_valence.append((fe(x_av[i])))
 
 y_arousal = []  # gia to 1o subject einai (741,2)
+y_valence = []
+y_arousal_valence = []
 for i in range(0, subjects):
     labels_hal = np.array(y_hala[i])
     clips = labels_hal.shape[0]
     epochs = labels_hal.shape[1]
-    reshaped = np.reshape(labels_hal, (clips * epochs))
-    y_arousal.append(reshaped)
+    reshaped_hal = np.reshape(labels_hal, (clips * epochs))
+    y_arousal.append(reshaped_hal)
+
+    labels_hvl = np.array(y_hvlv[i])
+    clips = labels_hvl.shape[0]
+    epochs = labels_hvl.shape[1]
+    reshaped_hvl = np.reshape(labels_hvl, (clips * epochs))
+    y_valence.append(reshaped_hvl)
+
+    labels_av = np.array(y_av[i])
+    clips = labels_av.shape[0]
+    epochs = labels_av.shape[1]
+    reshaped_av = np.reshape(labels_av, (clips * epochs))
+    y_arousal_valence.append(reshaped_av)
 
 '''
 ones = 0
 zeros= 0
-for i in y_arousal:
+for i in y_valence:
     zeros = zeros + i.tolist().count(0)
     ones = ones + i.tolist().count(1)
+print(zeros)
+print(ones)
 '''
 
 # Store data structure using pickle
+
+# Arousal
 with open("deap_hala_x", "wb") as fp:
     pickle.dump(x_arousal, fp)
 
-# Store data structure using pickle
 with open("deap_hala_y", "wb") as fp:
     pickle.dump(y_arousal, fp)
+
+# Valence
+with open("deap_hvlv_x", "wb") as fp:
+    pickle.dump(x_valence, fp)
+
+with open("deap_hvlv_y", "wb") as fp:
+    pickle.dump(y_valence, fp)
+
+# Arousal and Valence
+with open("deap_av_x", "wb") as fp:
+    pickle.dump(x_arousal_valence, fp)
+
+with open("deap_av_y", "wb") as fp:
+    pickle.dump(y_arousal_valence, fp)
