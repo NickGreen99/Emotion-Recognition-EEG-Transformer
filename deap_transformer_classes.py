@@ -112,13 +112,11 @@ class TransformerEncoder(layers.Layer):
     def __init__(self, model_dim, num_blocks):
         super(TransformerEncoder, self).__init__()
         self.blocks = [TransformerEncoderBlock(model_dim, num_blocks) for _ in range(num_blocks)]
-        self.dropout = Dropout(0.4)
 
     def call(self, x, *kwargs):
         # create a [batch_size, projection_dim] tensor.
         for block in self.blocks:
             x = block(x)
-        y = self.dropout(x)
-        return y
+        return x
 
 

@@ -13,12 +13,13 @@ from sklearn.model_selection import LeaveOneOut
 from keras.callbacks import LearningRateScheduler
 from keras.optimizers import Adam
 from sklearn.metrics import confusion_matrix, multilabel_confusion_matrix
+from keras import backend as K
 
 # Unpickling
-with open("deap_hvlv_x", "rb") as fp:
+with open("deap_hala_x", "rb") as fp:
     x = pickle.load(fp)
 
-with open("deap_hvlv_y", "rb") as fp:
+with open("deap_hala_y", "rb") as fp:
     y = pickle.load(fp)
 
 # Check whether we do binary or 4-class classification
@@ -141,30 +142,43 @@ def HierarchicalTransformer():
 
 
 model = HierarchicalTransformer()
-
-model.summary()
 '''
+model.summary()
+
 plot_model(model, to_file='model.png', show_shapes=True)
 '''
-'''
+
 # Training hyperparameters
 epochs = 80
 batch_size = 512
-early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min',  verbose=1,
+early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=30,
                                                restore_best_weights=True)
 
 
-# Cosine Learning Decay function
-def cosine_decay(epoch, lr):
-    lrate = lr * (math.cos(math.pi * epoch / epochs) + 1) / 2
-    return lrate
+class CosineScheduler:
+    def __init__(self, max_update, base_lr, final_lr, warmup_steps=0, warmup_begin_lr=0):
+        self.base_lr_orig = base_lr
+        self.max_update = max_update
+        self.final_lr = final_lr
+        self.warmup_steps = warmup_steps
+        self.warmup_begin_lr = warmup_begin_lr
+        self.max_steps = self.max_update - self.warmup_steps
+
+    def get_warmup_lr(self, epoch):
+        increase = (self.base_lr_orig - self.warmup_begin_lr) \
+                       * float(epoch) / float(self.warmup_steps)
+        return self.warmup_begin_lr + increase
+
+    def __call__(self, epoch):
+        if epoch < self.warmup_steps:
+            return self.get_warmup_lr(epoch)
+        if epoch <= self.max_update:
+            self.base_lr = self.final_lr + (self.base_lr_orig - self.final_lr) * (1 + math.cos(math.pi * (epoch - self.warmup_steps) / self.max_steps)) / 2
+        return self.base_lr
 
 
-# Cosine Learning Annealing function
-def cosine_annealing(epoch, lr):
-    final_lrate = 0.0001
-    cos_inner = (math.pi * (epoch % epochs)) / epochs
-    return final_lrate + (lr - final_lrate) * (1 + math.cos(cos_inner)) / 2
+#scheduler = CosineScheduler(max_update=40, base_lr=0.1, final_lr=0.0)
+#plt.plot(tf.range(epochs), [scheduler(t) for t in range(epochs)])
 
 
 # Leave-One-Subject-Out
@@ -172,11 +186,9 @@ loo = LeaveOneOut()
 average_results_acc = []
 average_results_f1 = []
 average_results_cohen = []
-count = 0
 for train_index, test_index in loo.split(x):
-    count += 1
     print('-----------------------------------------')
-    print('count = ' + str(count))
+    print('count = ' + str(test_index[0]))
     tf.keras.backend.clear_session()
 
     # Train - Validation Split
@@ -232,13 +244,13 @@ for train_index, test_index in loo.split(x):
     train_labels = np.reshape(train_labels, (-1, classes))
     test_labels = tf.one_hot(test_labels, classes)
 
-    # Cosine Learning Decay
-    #lr_cosine_decay = keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.01, decay_steps=512 * 20)
-    lrate = LearningRateScheduler(cosine_decay)
+    scheduler = CosineScheduler(max_update=80, base_lr=0.00001, final_lr=0.0)
+    lrate = LearningRateScheduler(scheduler)
+    #lrate = LearningRateScheduler(cosine_decay)
 
     model.compile(
-        loss=keras.losses.CategoricalCrossentropy(),
-        optimizer=Adam(learning_rate=0.001)
+        loss='categorical_crossentropy',
+        optimizer='adam'
     )
 
     history = model.fit(
@@ -255,43 +267,51 @@ for train_index, test_index in loo.split(x):
     true_bool = np.argmax(test_labels, axis=1)
 
     # Confusion Matrix
-    cm = confusion_matrix(true_bool, prediction_bool)
+    if classes == 2:
+        cm = confusion_matrix(true_bool, prediction_bool)
 
-    # Accuracy
-    accuracy = (cm[0][0] + cm[1][1]) / (cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1])
+        # Accuracy
+        accuracy = (cm[0][0] + cm[1][1]) / (cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1])
+        if not np.isnan(accuracy):
+            average_results_acc.append(accuracy)
 
-    # F1
-    recall = (cm[1][1]) / (cm[1][1]+cm[0][1])
-    precision = (cm[1][1]) / (cm[1][1]+cm[1][0])
-    f1 = 2 * (precision * recall) / (precision + recall)
+        # F1
+        recall = (cm[1][1]) / (cm[1][1]+cm[0][1])
+        precision = (cm[1][1]) / (cm[1][1]+cm[1][0])
+        f1 = 2 * (precision * recall) / (precision + recall)
+        if not np.isnan(f1):
+            average_results_f1.append(f1)
 
-    # Cohen
-    agree = accuracy
-    total = cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1]
-    probPred_1_0 = (cm[0][0] + cm[1][0]) / total
-    probTrue_1_0 = (cm[0][0] + cm[0][1]) / total
-    probPred_0_1 = (cm[0][1] + cm[1][1]) / total
-    probTrue_0_1 = (cm[1][0] + cm[1][1]) / total
-    chance_agree = (probTrue_1_0 * probPred_1_0) + (probTrue_0_1 * probPred_0_1)
-    cohen = (agree - chance_agree) / (1-chance_agree)
+        # Cohen
+        agree = accuracy
+        total = cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1]
+        probPred_1_0 = (cm[0][0] + cm[1][0]) / total
+        probTrue_1_0 = (cm[0][0] + cm[0][1]) / total
+        probPred_0_1 = (cm[0][1] + cm[1][1]) / total
+        probTrue_0_1 = (cm[1][0] + cm[1][1]) / total
+        chance_agree = (probTrue_1_0 * probPred_1_0) + (probTrue_0_1 * probPred_0_1)
+        cohen = (agree - chance_agree) / (1-chance_agree)
+        if not np.isnan(cohen):
+            average_results_cohen.append(cohen)
+            print(cohen)
 
-    average_results_acc.append(accuracy)
-    average_results_f1.append(f1)
-    average_results_cohen.append(cohen)
-    print(cohen)
-    #if test_index[0] == 3:
-    #    break
+    else:
+        cm = multilabel_confusion_matrix(true_bool, prediction_bool)
+        if test_index[0] == 0:
+            break
+
+
 average_results_acc = np.array(average_results_acc)
 average_results_f1 = np.array(average_results_f1)
 average_results_cohen = np.array(average_results_cohen)
-print('Results Acc: ' + str(np.mean(average_results_acc)) + '| Std: ' + str(np.std(average_results_acc)))
-print('Results F1: ' + str(np.mean(average_results_f1)) + '| Std: ' + str(np.std(average_results_f1)))
-print('Results Kappa: ' + str(np.mean(average_results_cohen)) + '| Std: ' + str(np.std(average_results_cohen)))
-'''
-'''
+print('Results Acc: ' + str(np.mean(average_results_acc)) + ' | Std: ' + str(np.std(average_results_acc)))
+print('Results F1: ' + str(np.mean(average_results_f1)) + ' | Std: ' + str(np.std(average_results_f1)))
+print('Results Kappa: ' + str(np.mean(average_results_cohen)) + ' | Std: ' + str(np.std(average_results_cohen)))
+
+
 # plot losses
 plt.plot(history.history['loss'], label='train')
 plt.plot(history.history['val_loss'], label='test')
 plt.legend()
 plt.show()
-'''
+
