@@ -1,61 +1,49 @@
 from glob import glob
 import scipy.signal
-import mne
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import pickle
 
-# EEG data information
+# Import DEAP dataset in Python
+
 ch_names = ['Fp1', 'AF3', 'F3', 'F7', 'FC5', 'FC1', 'C3', 'T7', 'CP5', 'CP1', 'P3', 'P7', 'PO3', 'O1',
             'Oz', 'Pz', 'Fp2', 'AF4', 'Fz', 'F4', 'F8', 'FC6', 'FC2', 'Cz', 'C4', 'T8', 'CP6', 'CP2',
             'P4', 'P8', 'PO4', 'O2']
-sampling_freq = 128  # Hz
-ch_types = ['eeg'] * 32
-info = mne.create_info(ch_names, ch_types=ch_types, sfreq=sampling_freq)
-info.set_montage('standard_1020')
 
-# EEG segmentation (epoching) function
-window_size = 6
-overlap_size = window_size * 0.5
+fs = 128  # sampling frequency in deap dataset
+total_length = 8064  # 63 sec
+pretrial = fs * 3  # pretrial baseline
+data_length = total_length - pretrial  # useful signal
 
-
-def read_data(eeg):
-    simulated_raw = mne.io.RawArray(eeg, info, verbose='critical')
-    epochs = mne.make_fixed_length_epochs(simulated_raw, duration=window_size, overlap=overlap_size, verbose='ERROR')
-    array = epochs.get_data()
-    return array
-
-
-# Read .dat files
-subjects_file_path = glob('venv/DEAP/data_preprocessed_python/*.dat')
-subjects = len(subjects_file_path)
+subjects = 32
 trials = 40
+electrodes = 32
 
-signals = []
-labels = []
-for subject in subjects_file_path:
-    path = Path(subject)
-    content = path.read_bytes()
-    data = pickle.loads(content, encoding='ISO-8859-1')
-    signals.append(data['data'])  # (subjects, trials, electrodes, samples)
-    labels.append(data['labels'])
+deap_data = np.zeros((subjects, trials, electrodes, data_length))
+deap_labels = np.zeros((subjects, trials, 2))
 
-# Create data matrix (subjects, trials, epochs, channels, samples)
-data_length = 60 * sampling_freq  # 60 seconds each trial
-number_of_segments = (data_length - (overlap_size * sampling_freq)) / (overlap_size * sampling_freq)
-# We need to erase pre_trial baseline from our data
-pre_trial = sampling_freq * 3
+subjects_file_path = glob('venv/DEAP/data_preprocessed_python/*.dat')
+for count, subject in enumerate(subjects_file_path):
+    user_load = pickle.load(open(subject, "rb"), encoding='latin')
+    deap_data[count] = user_load['data'][0:trials, 0:electrodes, pretrial:pretrial + data_length]
+    deap_labels[count] = user_load['labels'][0:trials, 0:2]
 
-# subjects x trials x epochs x channels x samples (32, 40, 19, 32, 768)
-eeg_data = np.zeros((subjects, trials, int(number_of_segments), len(ch_names), window_size * sampling_freq))
+# Epoch data (Segmentation)
+window = 6
+overlap = 6 * 0.5
+number_of_segments = int((data_length - (overlap * fs)) / (overlap * fs))
+print(number_of_segments)
 
-for i in range(0, subjects):
-    for j in range(0, trials):
-        eeg_data[i, j] = read_data(signals[i][j][0:32, pre_trial:pre_trial+data_length])
+eeg_data = np.zeros((subjects, trials, number_of_segments, electrodes, window * fs))
+
+count = 0
+for epoch in range(0, number_of_segments):
+    window_size = int(window * fs)
+    eeg_data[0:subjects, 0:trials, epoch] = deap_data[0:subjects, 0:trials, 0:electrodes, count:count + window_size]
+    count += int(overlap * fs)
 
 # Get correct number of samples, separate HIGH AROUSAL from LOW AROUSAL and HIGH VALENCE from LOW VALENCE
-
 # LA --> 1-4 --> 0
 # HA --> 6-9 --> 1
 
@@ -86,24 +74,24 @@ for i in range(0, subjects):
 
         for k in range(0, int(number_of_segments)):
             # Binary
-            if (labels[i][j][1] <= 4) and (labels[i][j][1] >= 1):
+            if (deap_labels[i, j, 1] <= 4) and (deap_labels[i, j, 1] >= 1):
                 hala_segments.append(0)  # low arousal
-            elif (labels[i][j][1] >= 6) and (labels[i][j][1] <= 9):
+            elif (deap_labels[i, j, 1] >= 6) and (deap_labels[i, j, 1] <= 9):
                 hala_segments.append(1)  # high arousal
 
-            if (labels[i][j][0]) <= 4 and (labels[i][j][0] >= 1):
+            if (deap_labels[i, j, 0]) <= 4 and (deap_labels[i, j, 0] >= 1):
                 hvlv_segments.append(0)  # low valence
-            elif (labels[i][j][0] >= 6) and (labels[i][j][0] <= 9):
+            elif (deap_labels[i, j, 0] >= 6) and (deap_labels[i, j, 0] <= 9):
                 hvlv_segments.append(1)  # high valence
 
             # 4-class
-            if (labels[i][j][1]) <= 4 and (labels[i][j][1] >= 1) and (labels[i][j][0] <= 4) and (labels[i][j][0] >= 1):
+            if (deap_labels[i, j, 1]) <= 4 and (deap_labels[i, j, 1] >= 1) and (deap_labels[i, j, 0] <= 4) and (deap_labels[i, j, 0] >= 1):
                 av_segments.append(0)  # low arousal low valence
-            elif (labels[i][j][1]) <= 4 and (labels[i][j][1] >= 1) and (labels[i][j][0] <= 9) and (labels[i][j][0] >= 6):
+            elif (deap_labels[i, j, 1]) <= 4 and (deap_labels[i, j, 1] >= 1) and (deap_labels[i, j, 0] <= 9) and (deap_labels[i, j, 0] >= 6):
                 av_segments.append(1)  # low arousal high valence
-            elif (labels[i][j][1]) <= 9 and (labels[i][j][1] >= 6) and (labels[i][j][0] <= 4) and (labels[i][j][0] >= 1):
+            elif (deap_labels[i, j, 1]) <= 9 and (deap_labels[i, j, 1] >= 6) and (deap_labels[i, j, 0] <= 4) and (deap_labels[i, j, 0] >= 1):
                 av_segments.append(2)  # high arousal low valence
-            elif (labels[i][j][1]) <= 9 and (labels[i][j][1] >= 6) and (labels[i][j][0] <= 9) and (labels[i][j][0] >= 6):
+            elif (deap_labels[i, j, 1]) <= 9 and (deap_labels[i, j, 1] >= 6) and (deap_labels[i, j, 0] <= 9) and (deap_labels[i, j, 0] >= 6):
                 av_segments.append(3)  # high arousal high valence
         hala_trials.append(hala_segments)
         hvlv_trials.append(hvlv_segments)
@@ -122,7 +110,7 @@ def assign_values_to_labels(label_list):
         x_trials = []
         y_trials = []
         for j in range(0, trials):
-            # Checks to see if a clip has not got a valid movie rating (1 < rating < 4 [low]) or (6 < rating < 9 [high])
+            # Checks to see if a clip hasn't got a valid movie rating (1 < rating < 4 [low]) or (6 < rating < 9 [high])
             if label_list[i][j]:
                 x_epochs = []
                 y_epochs = []
@@ -141,9 +129,6 @@ x_hala, y_hala = assign_values_to_labels(hala_list)
 x_hvlv, y_hvlv = assign_values_to_labels(hvlv_list)
 x_av, y_av = assign_values_to_labels(av_list)
 
-# x_hala = (32,39,19,32,768) gia to 1o subject
-# x_hala = (32,34,19,32,768) gia to 2o subject
-
 
 # Feature Extraction and data preparations for inputs to HSLT model
 def fe(x):
@@ -156,7 +141,7 @@ def fe(x):
     freq_bands = 5
 
     # noinspection PyUnresolvedReferences
-    (f, psd) = scipy.signal.welch(eeg, sampling_freq, nperseg=sampling_freq, window='hamming')
+    (f, psd) = scipy.signal.welch(eeg, fs, nperseg=fs, window='hamming')
     # psd shape for one segment and one channel 1*65
     # frequency shape is 1*65, makes sense cause sampling freq is 128 so we can analyse from 0-64hz
     X = np.zeros((clips * epochs, channels, freq_bands))
@@ -181,6 +166,7 @@ def fe(x):
     x_p = np.zeros((clips * epochs, 3, 5))
     x_rp = np.zeros((clips * epochs, 3, 5))
     x_o = np.zeros((clips * epochs, 3, 5))
+
     for i in range(0, clips * epochs):
         x_pf[i] = [X[i, ch_names.index('Fp1')], X[i, ch_names.index('AF3')],
                    X[i, ch_names.index('AF4')], X[i, ch_names.index('Fp2')]]
@@ -208,8 +194,7 @@ def fe(x):
 
 # Subjects x Brain Region x Data x Electrodes x Frequency band
 
-
-x_arousal = []  # gia to 1o subject einai (741,4,5), gia to 2o subject einai (646,4,5) [to 4 einai gia to prefrontal]
+x_arousal = []
 x_valence = []
 x_arousal_valence = []
 for i in range(0, subjects):
@@ -217,7 +202,7 @@ for i in range(0, subjects):
     x_valence.append(fe(x_hvlv[i]))
     x_arousal_valence.append((fe(x_av[i])))
 
-y_arousal = []  # gia to 1o subject einai (741,2)
+y_arousal = []
 y_valence = []
 y_arousal_valence = []
 for i in range(0, subjects):
@@ -239,15 +224,30 @@ for i in range(0, subjects):
     reshaped_av = np.reshape(labels_av, (clips * epochs))
     y_arousal_valence.append(reshaped_av)
 
-'''
-ones = 0
-zeros= 0
-for i in y_valence:
-    zeros = zeros + i.tolist().count(0)
-    ones = ones + i.tolist().count(1)
-print(zeros)
-print(ones)
-'''
+
+def count_data(li):
+    ones = 0
+    zeros = 0
+    twos = 0
+    threes = 0
+    for i in li:
+        zeros = zeros + i.tolist().count(0)
+        ones = ones + i.tolist().count(1)
+        if max(y_arousal_valence[0]) > 1:
+            twos = twos + i.tolist().count(2)
+            threes = threes + i.tolist().count(3)
+    return zeros, ones, twos, threes
+
+
+lv, hv, no1, no2 = count_data(y_valence)
+la, ha, no3, no4 = count_data(y_arousal)
+lalv, lahv, halv, hahv = count_data(y_arousal_valence)
+
+print('Low Valence: ' + str(lv) + ' | ' + 'High valence: ' + str(hv))
+print('Low Arousal: ' + str(la) + ' | ' + 'High arousal: ' + str(ha))
+print('Low Arousal Low Valence: ' + str(lalv) + ' | ' + 'Low arousal High Valence: ' + str(lahv) + ' | ' +
+      'High Arousal Low Valence: ' + str(halv) + ' | ' + 'High arousal High Valence: ' + str(hahv))
+
 
 # Store data structure using pickle
 

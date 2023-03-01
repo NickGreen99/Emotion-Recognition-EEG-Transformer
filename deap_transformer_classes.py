@@ -89,7 +89,7 @@ class TransformerEncoderBlock(layers.Layer):
         self.layernormalization1 = LayerNormalization(epsilon=1e-6)
         self.attention = MultiHeadAttention(num_heads=num_heads, key_dim=msa_dimensions, dropout=dropout_rate)
         self.layernormalization2 = LayerNormalization(epsilon=1e-6)
-        self.mlp = MLP(hidden_states=model_dim * 2, output_states=model_dim)
+        self.mlp = MLP(hidden_states=model_dim * 4, output_states=model_dim)
 
     def call(self, x, *kwargs):
         # layer normalization 1.

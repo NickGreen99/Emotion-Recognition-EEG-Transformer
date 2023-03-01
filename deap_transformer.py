@@ -4,6 +4,7 @@ import numpy as np
 from keras.utils import plot_model
 import tensorflow_addons as tfa
 import matplotlib.pyplot as plt
+from sklearn import metrics
 import math
 from tensorflow import keras
 from keras import Model, activations
@@ -21,6 +22,20 @@ with open("deap_hala_x", "rb") as fp:
 
 with open("deap_hala_y", "rb") as fp:
     y = pickle.load(fp)
+
+
+def count_data(li):
+    ones = 0
+    zeros = 0
+    for i in li:
+        zeros = zeros + i.tolist().count(0)
+        ones = ones + i.tolist().count(1)
+    return zeros, ones
+
+
+low, high = count_data(y)
+print('Low: ' + str(low) + ' | ' + 'High: ' + str(high))
+
 
 # Check whether we do binary or 4-class classification
 classes = 2
@@ -128,8 +143,8 @@ def HierarchicalTransformer():
     xl = Reshape((brain_regions_N, 4 * De))(xl)
     brain_regions_embeddings = LinearEmbedding(brain_regions_N, Dr, False)(xl)
     outputs_br = TransformerEncoder(Dr, Lr)(brain_regions_embeddings)
-    #class_token_output = outputs_br[:, 0, :]
-    class_token_output = GlobalAveragePooling1D()(outputs_br)
+    class_token_output = outputs_br[:, 0, :]
+    #class_token_output = GlobalAveragePooling1D()(outputs_br)
     # Only class token is input to our emotion prediction NN
     prediction = Dense(classes, activation=activations.sigmoid)(class_token_output)
 
@@ -142,16 +157,16 @@ def HierarchicalTransformer():
 
 
 model = HierarchicalTransformer()
-'''
+
 model.summary()
 
 plot_model(model, to_file='model.png', show_shapes=True)
-'''
+
 
 # Training hyperparameters
 epochs = 80
 batch_size = 512
-early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=30,
+early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=10,
                                                restore_best_weights=True)
 
 
@@ -244,13 +259,20 @@ for train_index, test_index in loo.split(x):
     train_labels = np.reshape(train_labels, (-1, classes))
     test_labels = tf.one_hot(test_labels, classes)
 
-    scheduler = CosineScheduler(max_update=80, base_lr=0.00001, final_lr=0.0)
-    lrate = LearningRateScheduler(scheduler)
+    #scheduler = CosineScheduler(max_update=80, base_lr=0.01, final_lr=0)
+    #lrate = LearningRateScheduler(scheduler)
     #lrate = LearningRateScheduler(cosine_decay)
 
+    num_train_steps = (train_labels.shape[0] // batch_size) * epochs  # total number of batches
+
+    lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=0.005,
+        decay_steps=num_train_steps
+    )
+    opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     model.compile(
         loss='categorical_crossentropy',
-        optimizer='adam'
+        optimizer=opt
     )
 
     history = model.fit(
@@ -259,7 +281,7 @@ for train_index, test_index in loo.split(x):
         y=train_labels,
         validation_data=([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test, lparietal_test,
                           parietal_test, rparietal_test, occipital_test], test_labels),
-        epochs=epochs, batch_size=batch_size, callbacks=[early_stopping, lrate]
+        epochs=epochs, batch_size=batch_size, callbacks=[early_stopping]
     )
     prediction = model.predict([prefrontal_test, frontal_test, ltemporal_test, central_test, rtemporal_test,
                                 lparietal_test, parietal_test, rparietal_test, occipital_test])
@@ -268,19 +290,21 @@ for train_index, test_index in loo.split(x):
 
     # Confusion Matrix
     if classes == 2:
+        '''
         cm = confusion_matrix(true_bool, prediction_bool)
-
         # Accuracy
         accuracy = (cm[0][0] + cm[1][1]) / (cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1])
         if not np.isnan(accuracy):
-            average_results_acc.append(accuracy)
+            #average_results_acc.append(accuracy)
+            print(accuracy)
 
         # F1
         recall = (cm[1][1]) / (cm[1][1]+cm[0][1])
         precision = (cm[1][1]) / (cm[1][1]+cm[1][0])
         f1 = 2 * (precision * recall) / (precision + recall)
         if not np.isnan(f1):
-            average_results_f1.append(f1)
+            #average_results_f1.append(f1)
+            print(f1)
 
         # Cohen
         agree = accuracy
@@ -292,13 +316,35 @@ for train_index, test_index in loo.split(x):
         chance_agree = (probTrue_1_0 * probPred_1_0) + (probTrue_0_1 * probPred_0_1)
         cohen = (agree - chance_agree) / (1-chance_agree)
         if not np.isnan(cohen):
-            average_results_cohen.append(cohen)
+            #average_results_cohen.append(cohen)
             print(cohen)
-
+        print('---')
+        '''
+        accuracy = metrics.accuracy_score(true_bool, prediction_bool)
+        f1_score = metrics.f1_score(true_bool, prediction_bool)
+        cohen = metrics.cohen_kappa_score(true_bool, prediction_bool)
+        print(accuracy)
+        print(f1_score)
+        print(cohen)
+        if not np.isnan(accuracy):
+            average_results_acc.append(accuracy)
+        if not np.isnan(cohen):
+            average_results_cohen.append(cohen)
+        if not np.isnan(f1_score):
+            average_results_f1.append(f1_score)
     else:
-        cm = multilabel_confusion_matrix(true_bool, prediction_bool)
-        if test_index[0] == 0:
-            break
+        accuracy = metrics.accuracy_score(true_bool, prediction_bool)
+        f1_score = metrics.f1_score(true_bool, prediction_bool, average='micro')
+        cohen = metrics.cohen_kappa_score(true_bool, prediction_bool)
+        print(accuracy)
+        print(f1_score)
+        print(cohen)
+        if not np.isnan(accuracy):
+            average_results_acc.append(accuracy)
+        if not np.isnan(cohen):
+            average_results_cohen.append(cohen)
+        if not np.isnan(f1_score):
+            average_results_f1.append(f1_score)
 
 
 average_results_acc = np.array(average_results_acc)
@@ -308,10 +354,10 @@ print('Results Acc: ' + str(np.mean(average_results_acc)) + ' | Std: ' + str(np.
 print('Results F1: ' + str(np.mean(average_results_f1)) + ' | Std: ' + str(np.std(average_results_f1)))
 print('Results Kappa: ' + str(np.mean(average_results_cohen)) + ' | Std: ' + str(np.std(average_results_cohen)))
 
-
+'''
 # plot losses
 plt.plot(history.history['loss'], label='train')
 plt.plot(history.history['val_loss'], label='test')
 plt.legend()
 plt.show()
-
+'''
