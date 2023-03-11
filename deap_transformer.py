@@ -42,6 +42,12 @@ classes = 2
 if max(y[0] > 1):
     classes = 4
 print(classes)
+if classes == 2:
+    activation = activations.sigmoid
+    loss = 'binary_crossentropy'
+else:
+    activation = activations.softmax
+    loss = 'categorical_crossentropy'
 
 # Shapes: subjects x brain region x sample x electrodes x frequency bands
 
@@ -144,10 +150,14 @@ def HierarchicalTransformer():
     brain_regions_embeddings = LinearEmbedding(brain_regions_N, Dr, False)(xl)
     outputs_br = TransformerEncoder(Dr, Lr)(brain_regions_embeddings)
     class_token_output = outputs_br[:, 0, :]
-    #class_token_output = GlobalAveragePooling1D()(outputs_br)
-    # Only class token is input to our emotion prediction NN
-    prediction = Dense(classes, activation=activations.sigmoid)(class_token_output)
 
+    # Only class token is input to our emotion prediction NN
+    if classes == 2:
+        prediction = Dense(classes, activation=activation)(class_token_output)
+        print('SIGMOID')
+    else:
+        prediction = Dense(classes, activation=activation)(class_token_output)
+        print('SOFTMAX')
     hslt = Model(inputs=[electrode_patch_pf, electrode_patch_f, electrode_patch_lt, electrode_patch_c,
                          electrode_patch_rt, electrode_patch_lp, electrode_patch_p, electrode_patch_rp,
                          electrode_patch_o],
@@ -271,7 +281,7 @@ for train_index, test_index in loo.split(x):
     )
     opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     model.compile(
-        loss='categorical_crossentropy',
+        loss=loss,
         optimizer=opt
     )
 
@@ -290,36 +300,6 @@ for train_index, test_index in loo.split(x):
 
     # Confusion Matrix
     if classes == 2:
-        '''
-        cm = confusion_matrix(true_bool, prediction_bool)
-        # Accuracy
-        accuracy = (cm[0][0] + cm[1][1]) / (cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1])
-        if not np.isnan(accuracy):
-            #average_results_acc.append(accuracy)
-            print(accuracy)
-
-        # F1
-        recall = (cm[1][1]) / (cm[1][1]+cm[0][1])
-        precision = (cm[1][1]) / (cm[1][1]+cm[1][0])
-        f1 = 2 * (precision * recall) / (precision + recall)
-        if not np.isnan(f1):
-            #average_results_f1.append(f1)
-            print(f1)
-
-        # Cohen
-        agree = accuracy
-        total = cm[0][0] + cm[0][1] + cm[1][0] + cm[1][1]
-        probPred_1_0 = (cm[0][0] + cm[1][0]) / total
-        probTrue_1_0 = (cm[0][0] + cm[0][1]) / total
-        probPred_0_1 = (cm[0][1] + cm[1][1]) / total
-        probTrue_0_1 = (cm[1][0] + cm[1][1]) / total
-        chance_agree = (probTrue_1_0 * probPred_1_0) + (probTrue_0_1 * probPred_0_1)
-        cohen = (agree - chance_agree) / (1-chance_agree)
-        if not np.isnan(cohen):
-            #average_results_cohen.append(cohen)
-            print(cohen)
-        print('---')
-        '''
         accuracy = metrics.accuracy_score(true_bool, prediction_bool)
         f1_score = metrics.f1_score(true_bool, prediction_bool)
         cohen = metrics.cohen_kappa_score(true_bool, prediction_bool)
@@ -334,7 +314,7 @@ for train_index, test_index in loo.split(x):
             average_results_f1.append(f1_score)
     else:
         accuracy = metrics.accuracy_score(true_bool, prediction_bool)
-        f1_score = metrics.f1_score(true_bool, prediction_bool, average='micro')
+        f1_score = metrics.f1_score(true_bool, prediction_bool, average='weighted')
         cohen = metrics.cohen_kappa_score(true_bool, prediction_bool)
         print(accuracy)
         print(f1_score)
