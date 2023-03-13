@@ -43,6 +43,7 @@ for epoch in range(0, number_of_segments):
     eeg_data[0:subjects, 0:trials, epoch] = deap_data[0:subjects, 0:trials, 0:electrodes, count:count + window_size]
     count += int(overlap * fs)
 
+
 # Get correct number of samples, separate HIGH AROUSAL from LOW AROUSAL and HIGH VALENCE from LOW VALENCE
 # LA --> 1-4 --> 0
 # HA --> 6-9 --> 1
