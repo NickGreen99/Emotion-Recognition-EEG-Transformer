@@ -2,7 +2,6 @@ from glob import glob
 import scipy.signal
 import matplotlib.pyplot as plt
 import numpy as np
-from pathlib import Path
 import pickle
 
 # Import DEAP dataset in Python
@@ -143,6 +142,7 @@ def fe(x):
 
     # noinspection PyUnresolvedReferences
     (f, psd) = scipy.signal.welch(eeg, fs, nperseg=fs, window='hamming')
+    freq_res = f[1]-f[0]
     # psd shape for one segment and one channel 1*65
     # frequency shape is 1*65, makes sense cause sampling freq is 128 so we can analyse from 0-64hz
     X = np.zeros((clips * epochs, channels, freq_bands))

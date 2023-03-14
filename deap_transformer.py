@@ -17,10 +17,10 @@ from sklearn.metrics import confusion_matrix, multilabel_confusion_matrix
 from keras import backend as K
 
 # Unpickling
-with open("deap_hala_x", "rb") as fp:
+with open("deap_hvlv_x", "rb") as fp:
     x = pickle.load(fp)
 
-with open("deap_hala_y", "rb") as fp:
+with open("deap_hvlv_y", "rb") as fp:
     y = pickle.load(fp)
 
 
