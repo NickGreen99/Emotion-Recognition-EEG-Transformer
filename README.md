@@ -2,6 +2,8 @@
 
 This repository contains the Python code implementation for my dissertation thesis in the Department of Electrical and Computer Engineering at the University of Patras. The thesis is based on the paper *"Transformers for EEG-Based Emotion Recognition: A Hierarchical Spatial Information Learning Model"* by Zhe Wang et al.
 
+![Screenshot of a comment on a GitHub issue showing an image, added in the Markdown, of an Octocat smiling and raising a tentacle.](/vit.png)
+
 ## Repository Structure
 
 - `deap_preprocessing.py`: Handles the DEAP dataset,the preprocessing of EEG data and feature extraction.
